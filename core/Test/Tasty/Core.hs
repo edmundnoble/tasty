@@ -120,6 +120,10 @@ data Result = Result
     -- Usually this is set to 'noResultDetails', which does nothing.
     --
     -- @since 1.3.1
+  , resultStartTime :: Time
+    -- ^ When the test started in seconds measured from some arbitrary
+    -- starting point.
+    -- @since 1.6
   }
   deriving
   ( Show -- ^ @since 1.2
@@ -163,6 +167,7 @@ exceptionResult e = Result
   , resultDescription = "Exception: " ++ displayException e
   , resultShortDescription = "FAIL"
   , resultTime = 0
+  , resultStartTime = 0
   , resultDetailsPrinter = noResultDetails
   }
 

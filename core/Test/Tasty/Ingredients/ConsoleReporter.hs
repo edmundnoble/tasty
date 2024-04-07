@@ -571,7 +571,7 @@ consoleTestReporterWithHook hook = TestReporter consoleTestReporterOptions $
             | otherwise -> consoleOutput toutput smap
           }
 
-          return $ \time -> do
+          return $ \(_, time) -> do
             stats <- computeStatistics smap
             printStatistics stats time
             return $ statFailures stats == 0

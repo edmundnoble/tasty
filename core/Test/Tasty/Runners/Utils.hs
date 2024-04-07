@@ -105,15 +105,25 @@ newtype SignalException = SignalException CInt
   deriving (Show, Typeable)
 instance Exception SignalException
 
+data Timed a = Timed
+  { startTime :: Time
+  , timeTaken :: Time
+  , timedResult :: a
+  }
+
 -- | Measure the time taken by an 'IO' action to run.
 --
 -- @since 1.2.2
-timed :: IO a -> IO (Time, a)
+timed :: IO a -> IO (Timed a)
 timed t = do
   start <- getTime
   !r    <- t
   end   <- getTime
-  return (end-start, r)
+  return Timed
+    { startTime = start
+    , timeTaken = end - start
+    , timedResult = r
+    }
 
 #if MIN_VERSION_base(4,11,0)
 -- | Get monotonic time.

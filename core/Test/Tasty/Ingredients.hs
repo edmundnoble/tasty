@@ -75,7 +75,7 @@ import Control.Concurrent.Async (concurrently)
 data Ingredient
   = TestReporter
       [OptionDescription]
-      (OptionSet -> TestTree -> Maybe (StatusMap -> IO (Time -> IO Bool)))
+      (OptionSet -> TestTree -> Maybe (StatusMap -> IO ((Time, Time) -> IO Bool)))
    -- ^ For the explanation on how the callback works, see the
    -- documentation for 'launchTestTree'.
    --

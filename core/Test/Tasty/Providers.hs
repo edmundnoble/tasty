@@ -34,6 +34,7 @@ testPassed desc = Result
   , resultDescription = desc
   , resultShortDescription = "OK"
   , resultTime = 0
+  , resultStartTime = 0
   , resultDetailsPrinter = noResultDetails
   }
 
@@ -48,6 +49,7 @@ testFailed desc = Result
   , resultDescription = desc
   , resultShortDescription = "FAIL"
   , resultTime = 0
+  , resultStartTime = 0
   , resultDetailsPrinter = noResultDetails
   }
 

@@ -49,8 +49,9 @@ import Test.Tasty.Patterns.Types
 import Test.Tasty.Options
 import Test.Tasty.Options.Core
 import Test.Tasty.Runners.Reducers
-import Test.Tasty.Runners.Utils (timed, forceElements)
+import Test.Tasty.Runners.Utils (timed, Timed(..), forceElements)
 import Test.Tasty.Providers.ConsoleFormat (noResultDetails)
+import GHC.Clock (getMonotonicTime)
 
 -- | Current status of a test.
 --
@@ -128,12 +129,14 @@ executeTest action statusVar timeoutOpt hideProgressOpt inits fins = mask $ \res
         atomically $ writeTVar statusVar (Executing emptyProgress)
         action yieldProgress
 
+    startTime <- getMonotonicTime
+
     -- If all initializers ran successfully, actually run the test.
     -- We run it in a separate thread, so that the test's exception
     -- handler doesn't interfere with our timeout.
     withAsync cursorMischiefManaged $ \asy -> do
       labelThread (asyncThreadId asy) "tasty_test_execution_thread"
-      timed $ applyTimeout timeoutOpt $ do
+      timed $ applyTimeout startTime timeoutOpt $ do
         r <- wait asy
         -- Not only wait for the result to be returned, but make sure to
         -- evalute it inside applyTimeout; see #280.
@@ -149,7 +152,10 @@ executeTest action statusVar timeoutOpt hideProgressOpt inits fins = mask $ \res
   atomically . writeTVar statusVar . Done $
     case resultOrExn <* maybe (Right ()) Left mbExn of
       Left ex -> exceptionResult ex
-      Right (t,r) -> r { resultTime = t }
+      Right td -> (timedResult td)
+        { resultStartTime = startTime td
+        , resultTime = timeTaken td
+        }
 
   where
     initResources :: IO ()
@@ -182,9 +188,9 @@ executeTest action statusVar timeoutOpt hideProgressOpt inits fins = mask $ \res
             Destroyed      -> return $ sleepIndefinitely
             BeingDestroyed -> return $ sleepIndefinitely
 
-    applyTimeout :: Timeout -> IO Result -> IO Result
-    applyTimeout NoTimeout a = a
-    applyTimeout (Timeout t tstr) a = do
+    applyTimeout :: Time -> Timeout -> IO Result -> IO Result
+    applyTimeout _ NoTimeout a = a
+    applyTimeout startT (Timeout t tstr) a = do
       let
         timeoutResult =
           Result
@@ -194,6 +200,7 @@ executeTest action statusVar timeoutOpt hideProgressOpt inits fins = mask $ \res
             , resultShortDescription = "TIMEOUT"
             , resultTime = fromIntegral t
             , resultDetailsPrinter = noResultDetails
+            , resultStartTime = startT
             }
       -- If compiled with unbounded-delays then t' :: Integer, otherwise t' :: Int
       let t' = fromInteger (min (max 0 t) (toInteger (maxBound :: Int64)))
@@ -436,7 +443,7 @@ createTestActions opts0 tree = do
       TGroup _ trees    -> mconcat (map collectFinalizers trees)
       TAction _         -> mempty
 
-    goSeqGroup 
+    goSeqGroup
       :: DependencyType
       -> Seq Dependency
       -> Tr
@@ -489,6 +496,7 @@ resolveDeps tests = maybeCheckCycles $ do
           , resultDescription = ""
           , resultShortDescription = "SKIP"
           , resultTime = 0
+          , resultStartTime = 0
           , resultDetailsPrinter = noResultDetails
           }
       }
@@ -588,7 +596,7 @@ destroyResource restore (Finalizer doRelease stateVar _) = join . atomically $ d
 launchTestTree
   :: OptionSet
   -> TestTree
-  -> (StatusMap -> IO (Time -> IO a))
+  -> (StatusMap -> IO ((Time, Time) -> IO a))
     -- ^ A callback. First, it receives the 'StatusMap' through which it
     -- can observe the execution of tests in real time. Typically (but not
     -- necessarily), it waits until all the tests are finished.
@@ -605,7 +613,7 @@ launchTestTree
 launchTestTree opts tree k0 = do
   (testActions, fins) <- createTestActions opts tree
   let NumThreads numTheads = lookupOption opts
-  (t,k1) <- timed $ do
+  Timed { startTime = st, timeTaken = tt, timedResult = k1 } <- timed $ do
      abortTests <- runInParallel numTheads (testAction <$> testActions)
      (do let smap = IntMap.fromDistinctAscList $ zip [0..] (testStatus <$> testActions)
          k0 smap)
@@ -619,7 +627,7 @@ launchTestTree opts tree k0 = do
          -- that were being destroyed by their tests, not those that were
          -- destroyed by destroyResource above.)
          restore $ waitForResources fins
-  k1 t
+  k1 (st, tt)
   where
     alive :: Resource r -> Bool
     alive r = case r of
